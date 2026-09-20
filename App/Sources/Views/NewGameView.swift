@@ -12,6 +12,7 @@ struct NewGameView: View {
     @State private var victoryTarget = Rules.defaultVictoryTarget
     @State private var discardLimit = Rules.defaultDiscardLimit
     @State private var specialBuild = false
+    @State private var twoPlayerVariant = true
 
     var body: some View {
         NavigationStack {
@@ -26,21 +27,33 @@ struct NewGameView: View {
                                 .textInputAutocapitalization(.words)
                         }
                     }
+                    .onDelete { offsets in
+                        guard names.count - offsets.count >= 2 else { return }
+                        names.remove(atOffsets: offsets)
+                        syncLayout()
+                    }
                     HStack {
+                        // Both buttons sit in one row, so they need a
+                        // borderless style: the default style lets the row
+                        // swallow the tap and neither one fires.
                         Button {
                             names.append("Player \(names.count + 1)")
                             syncLayout()
                         } label: {
                             Label("Add player", systemImage: "plus.circle")
                         }
+                        .buttonStyle(.borderless)
                         .disabled(names.count >= PlayerColor.palette.count)
+
                         Spacer()
+
                         Button(role: .destructive) {
                             names.removeLast()
                             syncLayout()
                         } label: {
                             Label("Remove", systemImage: "minus.circle")
                         }
+                        .buttonStyle(.borderless)
                         .disabled(names.count <= 2)
                     }
                 }
@@ -55,6 +68,14 @@ struct NewGameView: View {
                         Label("Five or six players need the large board.", systemImage: "exclamationmark.triangle")
                             .font(.footnote)
                             .foregroundStyle(.orange)
+                    }
+                }
+
+                if names.count == 2 {
+                    Section {
+                        Toggle("Two-player variant", isOn: $twoPlayerVariant)
+                    } footer: {
+                        Text("The published rules for two: two neutral players hold pieces on the board, you roll twice a turn, every road or settlement you build gives a neutral player a free piece, and trade tokens let you force a trade or send the robber back to the desert.")
                     }
                 }
 
@@ -97,7 +118,8 @@ struct NewGameView: View {
             balancedNumbers: balancedNumbers,
             victoryTarget: victoryTarget,
             discardLimit: discardLimit,
-            specialBuildPhase: specialBuild
+            specialBuildPhase: specialBuild,
+            twoPlayerVariant: names.count == 2 && twoPlayerVariant
         )
     }
 

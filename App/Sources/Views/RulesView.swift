@@ -32,6 +32,14 @@ struct RulesView: View {
                 Section("Longest road and largest army") {
                     Text("The longest road is awarded at five connected segments and the largest army at three played knights. Each moves to whoever passes the current holder, and ties leave the card where it is.")
                 }
+                Section("Playing with two") {
+                    Text("A game of two uses the published two-player variant. Two neutral players own pieces on the board: they take one settlement each at the start, never collect resources, never take a turn, and can hold the longest road.")
+                    Text("You roll the dice twice on your turn, and the second roll must show a different total from the first. Both rolls pay out, and a seven still sends the robber.")
+                    Text("Every road or settlement you build also gives one neutral player a free road or settlement, your choice. If no settlement is legal for them you must give a road. Cities and development cards give them nothing.")
+                    Text("You start with five trade tokens. Spend one while you are level or behind on victory points, or two while you are ahead, to force a trade — two random cards from your opponent for two of your own choosing — or to send the robber back to the desert. Once a turn you may hand back a face-up knight for two tokens, which can cost you the largest army.")
+                    Text("A new settlement next to the desert pays two tokens, one on the coast pays one, and a corner that is both pays three. This applies during the opening placement too.")
+                }
+
                 Section("Pass and play") {
                     Text("The screen is covered whenever the device should change hands, so hands stay private. Tap the hand bar to hide your cards again before passing.")
                 }

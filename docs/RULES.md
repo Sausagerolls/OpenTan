@@ -89,6 +89,58 @@ The bank holds 19 of each resource on the small board and 24 on the large one. I
 it cannot pay a resource in full and more than one player is owed it, nobody
 receives that resource. If only one player is owed it, they take what is left.
 
+## Playing with two
+
+A game of two follows the published two-player variant, which OpenTan switches
+on by default. It can be turned off when starting a game.
+
+### Neutral players
+
+Two neutral players take the spare sets of pieces. Each starts with one
+settlement on a central intersection. They never take a turn and never collect
+resources, but their settlements block corners and cut roads like anybody
+else's, and they can hold the longest road.
+
+### Two rolls a turn
+
+You roll the dice twice, one after the other, and the second roll must show a
+different total from the first. Both rolls pay out, and a seven still forces
+discards and moves the robber.
+
+### Building for the neutral players
+
+Every road or settlement you build also gives one neutral player, your choice, a
+free road or settlement. If no settlement is legal for either of them you must
+give a road instead. Cities and development cards give them nothing.
+
+### Trade tokens
+
+There are 20 trade tokens; each player starts with 5. An action costs 1 token
+while your victory point total is level with or behind your opponent's, and 2
+while you are ahead. Spent tokens go back to the supply.
+
+| Action | Effect |
+| --- | --- |
+| Forced trade | Take 2 random cards from your opponent and give back 2 of your choosing. If they hold only 1 card you take it and still give 2. |
+| Move the robber | Send the robber back to the desert. |
+
+Tokens come back in three ways:
+
+- Once a turn, hand back one of your face-up knights for 2 tokens. Doing so can
+  cost you the largest army: the holder sets it aside if they drop below three
+  knights or if their opponent catches up, and whoever then has the most, and at
+  least three, takes it.
+- A new settlement next to the desert pays 2 tokens.
+- A new settlement on the coast pays 1 token, or 3 if it is next to the desert
+  as well. Both apply during the opening placement.
+
+### What OpenTan approximates
+
+The printed variant marks two exact intersections for the neutral settlements on
+its board illustration. OpenTan generates a random board, so instead it takes the
+two inland corners nearest the middle that are far enough apart to obey the
+distance rule.
+
 ## Winning
 
 Settlements are worth one point and cities two. The longest road and the largest

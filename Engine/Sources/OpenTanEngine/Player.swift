@@ -49,6 +49,13 @@ public struct PlayerColor: Codable, Hashable, Sendable {
         self.blue = blue
     }
 
+    /// The two spare sets of pieces the two-player variant lends to its
+    /// imaginary neutral players.
+    public static let neutralPalette: [PlayerColor] = [
+        PlayerColor(name: "Slate", red: 0.42, green: 0.44, blue: 0.48),
+        PlayerColor(name: "Sand", red: 0.72, green: 0.64, blue: 0.48)
+    ]
+
     public static let palette: [PlayerColor] = [
         PlayerColor(name: "Red", red: 0.84, green: 0.22, blue: 0.20),
         PlayerColor(name: "Blue", red: 0.16, green: 0.42, blue: 0.78),
@@ -77,6 +84,13 @@ public struct Player: Codable, Sendable, Identifiable {
     public var id: Int
     public var name: String
     public var color: PlayerColor
+    /// Neutral players exist only in the two-player variant. They own pieces
+    /// and can hold the longest road, but they never take a turn and never
+    /// collect resources.
+    public var isNeutral: Bool = false
+    /// Two-player variant currency, spent on forced trades and on sending the
+    /// robber back to the desert.
+    public var tradeTokens: Int = 0
 
     public var resources: [Resource: Int] = Resource.allCases.reduce(into: [:]) { $0[$1] = 0 }
     public var developmentCards: [HeldDevelopmentCard] = []
@@ -91,10 +105,11 @@ public struct Player: Codable, Sendable, Identifiable {
     public var hasLongestRoad: Bool = false
     public var hasLargestArmy: Bool = false
 
-    public init(id: Int, name: String, color: PlayerColor) {
+    public init(id: Int, name: String, color: PlayerColor, isNeutral: Bool = false) {
         self.id = id
         self.name = name
         self.color = color
+        self.isNeutral = isNeutral
     }
 
     public var handCount: Int { resources.values.reduce(0, +) }
@@ -141,6 +156,20 @@ public enum Rules {
     public static let longestRoadThreshold = 5
     public static let defaultDiscardLimit = 7
     public static let defaultVictoryTarget = 10
+
+    // MARK: - Two-player variant
+
+    /// Trade tokens in the box, shared by both players.
+    public static let tradeTokenPool = 20
+    public static let startingTradeTokens = 5
+    /// Cards swapped in each direction by a forced trade.
+    public static let forcedTradeCards = 2
+    /// Tokens handed back for discarding a face-up knight.
+    public static let knightExchangeTokens = 2
+    public static let neutralPlayerCount = 2
+    /// Token bonuses for a new settlement next to the desert and on the coast.
+    public static let desertSettlementTokens = 2
+    public static let coastSettlementTokens = 1
 
     /// The 25-card development deck.
     public static func developmentDeck(for layout: BoardLayout) -> [DevelopmentCard] {

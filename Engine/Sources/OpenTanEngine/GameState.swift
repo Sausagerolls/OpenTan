@@ -8,24 +8,47 @@ public struct GameOptions: Codable, Sendable, Equatable {
     /// The five- and six-player game gives everyone a chance to build between
     /// turns. Off by default on the small board.
     public var specialBuildPhase: Bool
+    /// The published two-player variant: two neutral players, two dice rolls a
+    /// turn, and trade tokens. On by default at a table of two.
+    public var twoPlayerVariant: Bool
 
     public init(
         layout: BoardLayout = .standard,
         balancedNumbers: Bool = true,
         victoryTarget: Int = Rules.defaultVictoryTarget,
         discardLimit: Int = Rules.defaultDiscardLimit,
-        specialBuildPhase: Bool = false
+        specialBuildPhase: Bool = false,
+        twoPlayerVariant: Bool = false
     ) {
         self.layout = layout
         self.balancedNumbers = balancedNumbers
         self.victoryTarget = victoryTarget
         self.discardLimit = discardLimit
         self.specialBuildPhase = specialBuildPhase
+        self.twoPlayerVariant = twoPlayerVariant
     }
 
     public static func recommended(forPlayerCount count: Int) -> GameOptions {
         let layout = BoardLayout.recommended(forPlayerCount: count)
-        return GameOptions(layout: layout, specialBuildPhase: layout == .large)
+        return GameOptions(
+            layout: layout,
+            specialBuildPhase: layout == .large,
+            twoPlayerVariant: count == 2
+        )
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case layout, balancedNumbers, victoryTarget, discardLimit, specialBuildPhase, twoPlayerVariant
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        layout = try container.decode(BoardLayout.self, forKey: .layout)
+        balancedNumbers = try container.decode(Bool.self, forKey: .balancedNumbers)
+        victoryTarget = try container.decode(Int.self, forKey: .victoryTarget)
+        discardLimit = try container.decode(Int.self, forKey: .discardLimit)
+        specialBuildPhase = try container.decode(Bool.self, forKey: .specialBuildPhase)
+        twoPlayerVariant = try container.decodeIfPresent(Bool.self, forKey: .twoPlayerVariant) ?? false
     }
 }
 
@@ -41,6 +64,9 @@ public enum Phase: Codable, Hashable, Sendable {
     case movingRobber
     case stealing(candidates: [Int])
     case main
+    /// Two-player variant: a road or settlement you just built owes the
+    /// neutral players a free piece.
+    case neutralPlacement(mustBeRoad: Bool)
     case placingFreeRoads(remaining: Int)
     case awaitingTradeResponse(TradeOffer)
     /// Five- and six-player games: everyone else may buy between turns.
@@ -74,6 +100,11 @@ public enum GameAction: Sendable {
     case buildCity(VertexID)
     case buyDevelopmentCard
     case playDevelopmentCard(id: UUID, choice: DevelopmentChoice)
+    case placeNeutralRoad(neutral: Int, edge: EdgeID)
+    case placeNeutralSettlement(neutral: Int, vertex: VertexID)
+    case forcedTrade(give: [Resource: Int])
+    case moveRobberToDesert
+    case exchangeKnightForTokens
     case bankTrade(give: Resource, receive: Resource)
     case proposeTrade(TradeOffer)
     case respondToTrade(accept: Bool)
@@ -99,6 +130,9 @@ public enum GameError: Error, LocalizedError, Equatable {
     case alreadyPlayedCard
     case invalidDiscard
     case invalidTrade
+    case notAvailableInThisGame
+    case notEnoughTradeTokens
+    case knightExchangeUsed
     case gameFinished
 
     public var errorDescription: String? {
@@ -114,6 +148,9 @@ public enum GameError: Error, LocalizedError, Equatable {
         case .alreadyPlayedCard: return "You have already played a development card this turn."
         case .invalidDiscard: return "That is not the right number of cards to discard."
         case .invalidTrade: return "That trade is not valid."
+        case .notAvailableInThisGame: return "That is only part of the two-player game."
+        case .notEnoughTradeTokens: return "You do not have enough trade tokens."
+        case .knightExchangeUsed: return "You have already traded in a knight this turn."
         case .gameFinished: return "The game is over."
         }
     }
@@ -138,6 +175,8 @@ public struct GameState: Codable, Sendable {
     public private(set) var players: [Player]
     public private(set) var bank: [Resource: Int]
     public private(set) var developmentDeck: [DevelopmentCard]
+    /// Trade tokens still in the box, in the two-player variant.
+    public private(set) var tradeTokenSupply: Int = 0
 
     public private(set) var currentPlayer: Int
     public private(set) var phase: Phase
@@ -151,12 +190,19 @@ public struct GameState: Codable, Sendable {
     private var playedCardThisTurn = false
     private var phaseAfterRobber: Phase = .main
     private var pendingDiscards: [Int: Int] = [:]
+    /// Two-player variant bookkeeping.
+    private var rollsThisTurn = 0
+    private var firstRollTotal: Int?
+    private var exchangedKnightThisTurn = false
+    private var phaseAfterNeutralPlacement: Phase = .main
     private var seed: UInt64
 
     private enum CodingKeys: String, CodingKey {
         case options, board, players, bank, developmentDeck, currentPlayer, phase, turn
         case diceA, diceB, log, setupOrder, setupIndex, playedCardThisTurn
         case phaseAfterRobber, pendingDiscards, seed
+        case tradeTokenSupply, rollsThisTurn, firstRollTotal, exchangedKnightThisTurn
+        case phaseAfterNeutralPlacement
     }
 
     public init(from decoder: Decoder) throws {
@@ -180,6 +226,11 @@ public struct GameState: Codable, Sendable {
            let b = try container.decodeIfPresent(Int.self, forKey: .diceB) {
             dice = (a, b)
         }
+        tradeTokenSupply = try container.decodeIfPresent(Int.self, forKey: .tradeTokenSupply) ?? 0
+        rollsThisTurn = try container.decodeIfPresent(Int.self, forKey: .rollsThisTurn) ?? 0
+        firstRollTotal = try container.decodeIfPresent(Int.self, forKey: .firstRollTotal)
+        exchangedKnightThisTurn = try container.decodeIfPresent(Bool.self, forKey: .exchangedKnightThisTurn) ?? false
+        phaseAfterNeutralPlacement = try container.decodeIfPresent(Phase.self, forKey: .phaseAfterNeutralPlacement) ?? .main
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -201,6 +252,11 @@ public struct GameState: Codable, Sendable {
         try container.encode(seed, forKey: .seed)
         try container.encodeIfPresent(dice?.0, forKey: .diceA)
         try container.encodeIfPresent(dice?.1, forKey: .diceB)
+        try container.encode(tradeTokenSupply, forKey: .tradeTokenSupply)
+        try container.encode(rollsThisTurn, forKey: .rollsThisTurn)
+        try container.encodeIfPresent(firstRollTotal, forKey: .firstRollTotal)
+        try container.encode(exchangedKnightThisTurn, forKey: .exchangedKnightThisTurn)
+        try container.encode(phaseAfterNeutralPlacement, forKey: .phaseAfterNeutralPlacement)
     }
 
     public init(playerNames: [String], options: GameOptions? = nil, seed: UInt64? = nil) {
@@ -225,11 +281,112 @@ public struct GameState: Codable, Sendable {
         phase = .setupSettlement(round: 1)
         turn = 1
         log = [LogEntry(turn: 1, text: "Game started with \(playerNames.count) players.")]
+
+        if resolved.twoPlayerVariant {
+            startTwoPlayerVariant()
+        }
+    }
+
+    /// Lends the two spare sets of pieces to a pair of neutral players, hands
+    /// each real player their trade tokens, and drops a neutral settlement on
+    /// the two central corners the variant blocks off.
+    private mutating func startTwoPlayerVariant() {
+        for index in players.indices {
+            players[index].tradeTokens = Rules.startingTradeTokens
+        }
+        tradeTokenSupply = max(0, Rules.tradeTokenPool - players.count * Rules.startingTradeTokens)
+
+        let firstNeutral = players.count
+        for offset in 0..<Rules.neutralPlayerCount {
+            players.append(Player(
+                id: firstNeutral + offset,
+                name: "Neutral \(["A", "B", "C"][offset % 3])",
+                color: PlayerColor.neutralPalette[offset % PlayerColor.neutralPalette.count],
+                isNeutral: true
+            ))
+        }
+
+        for (offset, vertex) in neutralStartingCorners().enumerated() {
+            let owner = firstNeutral + offset
+            board.buildings[vertex] = Building(kind: .settlement, owner: owner)
+            players[owner].settlementsLeft -= 1
+        }
+        note("Two neutral players took a settlement each. They never collect resources.")
+    }
+
+    /// The printed variant marks two central intersections for the neutral
+    /// settlements. This picks the two inland corners nearest the middle of the
+    /// board that are far enough apart to obey the distance rule.
+    private func neutralStartingCorners() -> [VertexID] {
+        let centre = Geometry.center(of: Hex(0, 0))
+        let inland = board.allVertices
+            .filter { vertex in vertex.hexes.allSatisfy { board.tiles[$0] != nil } }
+            .sorted { lhs, rhs in
+                let a = Geometry.center(of: lhs)
+                let b = Geometry.center(of: rhs)
+                let da = hypot(a.x - centre.x, a.y - centre.y)
+                let db = hypot(b.x - centre.x, b.y - centre.y)
+                return da == db ? lhs < rhs : da < db
+            }
+
+        var chosen: [VertexID] = []
+        for vertex in inland {
+            let clashes = chosen.contains { Geometry.neighbors(of: $0).contains(vertex) || $0 == vertex }
+            guard !clashes else { continue }
+            chosen.append(vertex)
+            if chosen.count == Rules.neutralPlayerCount { break }
+        }
+        return chosen
     }
 
     // MARK: - Derived state
 
     public var currentPlayerObject: Player { players[currentPlayer] }
+
+    /// Everybody who actually takes a turn.
+    public var realPlayers: [Player] { players.filter { !$0.isNeutral } }
+
+    public var neutralPlayers: [Player] { players.filter(\.isNeutral) }
+
+    /// The other real player, in the two-player variant.
+    public var opponent: Int? {
+        realPlayers.first { $0.id != currentPlayer }?.id
+    }
+
+    /// Rolls still owed this turn. The variant asks for two.
+    public var rollsRemaining: Int {
+        max(0, (options.twoPlayerVariant ? 2 : 1) - rollsThisTurn)
+    }
+
+    public var hasExchangedKnightThisTurn: Bool { exchangedKnightThisTurn }
+
+    /// What a trade token action costs right now: one while you are level or
+    /// behind on victory points, two while you are ahead.
+    public func tradeTokenCost(for player: Int) -> Int {
+        guard let other = realPlayers.first(where: { $0.id != player })?.id else { return 1 }
+        let mine = victoryPoints(for: player, includingHidden: true)
+        let theirs = victoryPoints(for: other, includingHidden: true)
+        return mine <= theirs ? 1 : 2
+    }
+
+    /// Corners where a neutral player may take a free settlement.
+    public func neutralSettlementSpots(for neutral: Int) -> Set<VertexID> {
+        guard players[neutral].settlementsLeft > 0 else { return [] }
+        return Placement.settlementSpots(for: neutral, board: board)
+    }
+
+    public func neutralRoadSpots(for neutral: Int) -> Set<EdgeID> {
+        guard players[neutral].roadsLeft > 0 else { return [] }
+        return Placement.roadSpots(for: neutral, board: board)
+    }
+
+    public var anyNeutralSettlementSpotExists: Bool {
+        neutralPlayers.contains { !neutralSettlementSpots(for: $0.id).isEmpty }
+    }
+
+    public var anyNeutralRoadSpotExists: Bool {
+        neutralPlayers.contains { !neutralRoadSpots(for: $0.id).isEmpty }
+    }
 
     public var winner: Int? {
         if case .gameOver(let winner) = phase { return winner }
@@ -270,6 +427,11 @@ public struct GameState: Codable, Sendable {
         case .buildCity(let vertex): try buildCity(vertex)
         case .buyDevelopmentCard: try buyDevelopmentCard()
         case .playDevelopmentCard(let id, let choice): try playDevelopmentCard(id: id, choice: choice)
+        case .placeNeutralRoad(let neutral, let edge): try placeNeutralRoad(neutral: neutral, edge: edge)
+        case .placeNeutralSettlement(let neutral, let vertex): try placeNeutralSettlement(neutral: neutral, vertex: vertex)
+        case .forcedTrade(let give): try forcedTrade(give: give)
+        case .moveRobberToDesert: try moveRobberToDesert()
+        case .exchangeKnightForTokens: try exchangeKnightForTokens()
         case .bankTrade(let give, let receive): try bankTrade(give: give, receive: receive)
         case .proposeTrade(let offer): try proposeTrade(offer)
         case .respondToTrade(let accept): try respondToTrade(accept: accept)
@@ -300,6 +462,9 @@ public struct GameState: Codable, Sendable {
                 grant(resource, 1, to: currentPlayer)
             }
         }
+        if options.twoPlayerVariant {
+            awardTradeTokens(tradeTokenBonus(for: vertex), to: currentPlayer, reason: "for where the settlement sits")
+        }
         phase = .setupRoad(round: round, from: vertex)
     }
 
@@ -322,7 +487,10 @@ public struct GameState: Codable, Sendable {
             return
         }
         currentPlayer = setupOrder[setupIndex]
-        let nextRound = setupIndex < players.count ? 1 : 2
+        // The opening runs through the seating order and back, so the halfway
+        // point is the second round. Count against the order itself: with the
+        // two-player variant `players` also holds the neutral players.
+        let nextRound = setupIndex < setupOrder.count / 2 ? 1 : 2
         _ = round
         phase = .setupSettlement(round: nextRound)
     }
@@ -332,26 +500,41 @@ public struct GameState: Codable, Sendable {
     private mutating func rollDice() throws {
         guard case .preRoll = phase else { throw GameError.wrongPhase }
         var rng = SeededGenerator(seed: nextSeed())
-        let a = Int.random(in: 1...6, using: &rng)
-        let b = Int.random(in: 1...6, using: &rng)
+        var a = Int.random(in: 1...6, using: &rng)
+        var b = Int.random(in: 1...6, using: &rng)
+
+        // The two-player variant rolls twice a turn, and the second roll has
+        // to show a different total from the first.
+        if options.twoPlayerVariant, let first = firstRollTotal {
+            var guardCount = 0
+            while a + b == first && guardCount < 100 {
+                a = Int.random(in: 1...6, using: &rng)
+                b = Int.random(in: 1...6, using: &rng)
+                guardCount += 1
+            }
+        }
+
         dice = (a, b)
         let total = a + b
+        rollsThisTurn += 1
+        if options.twoPlayerVariant && rollsThisTurn == 1 { firstRollTotal = total }
         note("\(players[currentPlayer].name) rolled \(total).")
 
+        let next: Phase = rollsRemaining > 0 ? .preRoll : .main
         if total == 7 {
-            startRobberSequence()
+            startRobberSequence(returningTo: next)
         } else {
             produce(for: total)
-            phase = .main
+            phase = next
         }
     }
 
-    private mutating func startRobberSequence() {
+    private mutating func startRobberSequence(returningTo next: Phase = .main) {
         pendingDiscards = [:]
         for player in players where player.handCount > options.discardLimit {
             pendingDiscards[player.id] = player.handCount / 2
         }
-        phaseAfterRobber = .main
+        phaseAfterRobber = next
         phase = pendingDiscards.isEmpty ? .movingRobber : .discarding
         if !pendingDiscards.isEmpty {
             note("Players over \(options.discardLimit) cards must discard half.")
@@ -367,6 +550,8 @@ public struct GameState: Codable, Sendable {
             guard tile.number == total, hex != board.robber, let resource = tile.terrain.resource else { continue }
             for vertex in Geometry.corners(of: hex) {
                 guard let building = board.buildings[vertex] else { continue }
+                // Neutral players hold corners but never collect anything.
+                guard !players[building.owner].isNeutral else { continue }
                 claims[resource, default: [:]][building.owner, default: 0] += building.kind.yield
             }
         }
@@ -476,12 +661,15 @@ public struct GameState: Codable, Sendable {
         recomputeLongestRoad()
         note("\(players[currentBuilder].name) built a road.")
 
+        var next = phase
         if case .placingFreeRoads(let remaining) = phase {
             let left = remaining - 1
-            phase = left > 0 && Placement.roadSpots(for: currentBuilder, board: board).isEmpty == false
+            next = left > 0 && !Placement.roadSpots(for: currentBuilder, board: board).isEmpty
                 ? .placingFreeRoads(remaining: left)
                 : .main
         }
+        phase = next
+        requireNeutralPlacement(after: next)
         checkForWinner()
     }
 
@@ -499,6 +687,10 @@ public struct GameState: Codable, Sendable {
         // A new settlement can cut an opponent's road in two.
         recomputeLongestRoad()
         note("\(players[currentBuilder].name) built a settlement.")
+        if options.twoPlayerVariant {
+            awardTradeTokens(tradeTokenBonus(for: vertex), to: currentBuilder, reason: "for where the settlement sits")
+        }
+        requireNeutralPlacement(after: phase)
         checkForWinner()
     }
 
@@ -540,6 +732,11 @@ public struct GameState: Codable, Sendable {
         default: throw GameError.wrongPhase
         }
         guard !playedCardThisTurn else { throw GameError.alreadyPlayedCard }
+        // The variant's two rolls happen back to back, so a card played before
+        // the dice has to come before the first of them.
+        if options.twoPlayerVariant, case .preRoll = phase, rollsThisTurn > 0 {
+            throw GameError.wrongPhase
+        }
         guard let index = players[currentPlayer].developmentCards.firstIndex(where: { $0.id == id }) else {
             throw GameError.cardNotPlayable
         }
@@ -593,6 +790,168 @@ public struct GameState: Codable, Sendable {
             throw GameError.cardNotPlayable
         }
         checkForWinner()
+    }
+
+    // MARK: - The two-player variant
+
+    /// Every road or settlement you build owes the neutral players a free
+    /// piece. Cities and development cards do not.
+    private mutating func requireNeutralPlacement(after next: Phase) {
+        guard options.twoPlayerVariant, !players[currentBuilder].isNeutral else { return }
+        let canSettle = anyNeutralSettlementSpotExists
+        let canRoad = anyNeutralRoadSpotExists
+        guard canSettle || canRoad else { return }
+        phaseAfterNeutralPlacement = next
+        phase = .neutralPlacement(mustBeRoad: !canSettle)
+    }
+
+    private mutating func placeNeutralRoad(neutral: Int, edge: EdgeID) throws {
+        guard case .neutralPlacement = phase else { throw GameError.wrongPhase }
+        guard players.indices.contains(neutral), players[neutral].isNeutral else {
+            throw GameError.illegalPlacement
+        }
+        guard players[neutral].roadsLeft > 0 else { throw GameError.outOfPieces }
+        guard Placement.canBuildRoad(edge, for: neutral, board: board) else { throw GameError.illegalPlacement }
+
+        board.roads[edge] = neutral
+        players[neutral].roadsLeft -= 1
+        recomputeLongestRoad()
+        note("\(players[currentPlayer].name) gave \(players[neutral].name) a free road.")
+        phase = phaseAfterNeutralPlacement
+        checkForWinner()
+    }
+
+    private mutating func placeNeutralSettlement(neutral: Int, vertex: VertexID) throws {
+        guard case .neutralPlacement(let mustBeRoad) = phase else { throw GameError.wrongPhase }
+        guard !mustBeRoad else { throw GameError.illegalPlacement }
+        guard players.indices.contains(neutral), players[neutral].isNeutral else {
+            throw GameError.illegalPlacement
+        }
+        guard players[neutral].settlementsLeft > 0 else { throw GameError.outOfPieces }
+        guard neutralSettlementSpots(for: neutral).contains(vertex) else { throw GameError.illegalPlacement }
+
+        board.buildings[vertex] = Building(kind: .settlement, owner: neutral)
+        players[neutral].settlementsLeft -= 1
+        // A neutral settlement cuts roads just like anybody else's.
+        recomputeLongestRoad()
+        note("\(players[currentPlayer].name) gave \(players[neutral].name) a free settlement.")
+        phase = phaseAfterNeutralPlacement
+        checkForWinner()
+    }
+
+    /// Two tokens for a settlement touching the desert, one for a settlement
+    /// on the coast, three for a corner that is both.
+    private func tradeTokenBonus(for vertex: VertexID) -> Int {
+        var bonus = 0
+        if vertex.hexes.contains(where: { board.tiles[$0]?.terrain == .desert }) {
+            bonus += Rules.desertSettlementTokens
+        }
+        if vertex.hexes.contains(where: { board.tiles[$0] == nil }) {
+            bonus += Rules.coastSettlementTokens
+        }
+        return bonus
+    }
+
+    private mutating func awardTradeTokens(_ amount: Int, to player: Int, reason: String) {
+        guard amount > 0, tradeTokenSupply > 0 else { return }
+        let given = min(amount, tradeTokenSupply)
+        tradeTokenSupply -= given
+        players[player].tradeTokens += given
+        note("\(players[player].name) took \(given) trade token\(given == 1 ? "" : "s") \(reason).")
+    }
+
+    private mutating func spendTradeTokens(by player: Int) throws {
+        let cost = tradeTokenCost(for: player)
+        guard players[player].tradeTokens >= cost else { throw GameError.notEnoughTradeTokens }
+        players[player].tradeTokens -= cost
+        tradeTokenSupply += cost
+    }
+
+    /// Take two random cards from your opponent and hand back two of your
+    /// choosing. If they only hold one card you take it and still give two.
+    private mutating func forcedTrade(give: [Resource: Int]) throws {
+        guard options.twoPlayerVariant else { throw GameError.notAvailableInThisGame }
+        guard case .main = phase else { throw GameError.wrongPhase }
+        guard let other = opponent else { throw GameError.invalidTrade }
+
+        let offered = give.filter { $0.value > 0 }
+        guard offered.values.reduce(0, +) == Rules.forcedTradeCards else { throw GameError.invalidTrade }
+        guard offered.allSatisfy({ players[currentPlayer].count(of: $0.key) >= $0.value }) else {
+            throw GameError.cannotAfford
+        }
+        guard players[other].handCount > 0 else { throw GameError.invalidTrade }
+
+        try spendTradeTokens(by: currentPlayer)
+
+        var rng = SeededGenerator(seed: nextSeed())
+        var taken = 0
+        for _ in 0..<Rules.forcedTradeCards {
+            var pool: [Resource] = []
+            for resource in Resource.allCases {
+                pool.append(contentsOf: Array(repeating: resource, count: players[other].count(of: resource)))
+            }
+            guard let drawn = pool.randomElement(using: &rng) else { break }
+            players[other].resources[drawn, default: 0] -= 1
+            players[currentPlayer].receive(drawn)
+            taken += 1
+        }
+        for (resource, amount) in offered {
+            players[currentPlayer].resources[resource, default: 0] -= amount
+            players[other].receive(resource, amount)
+        }
+        note("\(players[currentPlayer].name) forced a trade, taking \(taken) from \(players[other].name).")
+        checkForWinner()
+    }
+
+    /// Send the robber back to the desert for a token or two.
+    private mutating func moveRobberToDesert() throws {
+        guard options.twoPlayerVariant else { throw GameError.notAvailableInThisGame }
+        guard case .main = phase else { throw GameError.wrongPhase }
+        guard let desert = board.tiles.values
+            .first(where: { $0.terrain == .desert && $0.hex != board.robber })?.hex else {
+            throw GameError.illegalPlacement
+        }
+        try spendTradeTokens(by: currentPlayer)
+        board.robber = desert
+        note("\(players[currentPlayer].name) sent the robber back to the desert.")
+    }
+
+    /// Hand back a face-up knight for two trade tokens, once a turn.
+    private mutating func exchangeKnightForTokens() throws {
+        guard options.twoPlayerVariant else { throw GameError.notAvailableInThisGame }
+        guard case .main = phase else { throw GameError.wrongPhase }
+        guard !exchangedKnightThisTurn else { throw GameError.knightExchangeUsed }
+        guard players[currentPlayer].knightsPlayed > 0 else { throw GameError.cardNotPlayable }
+
+        players[currentPlayer].knightsPlayed -= 1
+        exchangedKnightThisTurn = true
+        note("\(players[currentPlayer].name) traded a knight back in.")
+        awardTradeTokens(Rules.knightExchangeTokens, to: currentPlayer, reason: "for a knight")
+        recomputeLargestArmyAfterDiscard()
+        checkForWinner()
+    }
+
+    /// The variant's own wording: after a knight is discarded the holder sets
+    /// the card aside if they are down to two knights, or if their opponent has
+    /// caught up with them. Whoever then has the most, and at least three,
+    /// takes it.
+    private mutating func recomputeLargestArmyAfterDiscard() {
+        let contenders = realPlayers
+        if let holder = players.firstIndex(where: { $0.hasLargestArmy }) {
+            let held = players[holder].knightsPlayed
+            let caughtUp = contenders.contains { $0.id != holder && $0.knightsPlayed >= held }
+            if held < Rules.largestArmyThreshold || caughtUp {
+                players[holder].hasLargestArmy = false
+                note("\(players[holder].name) set the largest army aside.")
+            }
+        }
+        guard !players.contains(where: { $0.hasLargestArmy }) else { return }
+        let best = contenders.map(\.knightsPlayed).max() ?? 0
+        guard best >= Rules.largestArmyThreshold else { return }
+        let leaders = contenders.filter { $0.knightsPlayed == best }
+        guard leaders.count == 1, let winner = leaders.first else { return }
+        players[winner.id].hasLargestArmy = true
+        note("\(winner.name) has the largest army (\(best) knights).")
     }
 
     // MARK: - Trading
@@ -652,9 +1011,9 @@ public struct GameState: Codable, Sendable {
         checkForWinner()
         if case .gameOver = phase { return }
 
-        if options.specialBuildPhase, players.count > 1 {
+        if options.specialBuildPhase, realPlayers.count > 1 {
             let next = (currentPlayer + 1) % players.count
-            if next != currentPlayer {
+            if next != currentPlayer, !players[next].isNeutral {
                 phase = .specialBuild(player: next)
                 return
             }
@@ -664,7 +1023,8 @@ public struct GameState: Codable, Sendable {
 
     private mutating func endSpecialBuild() throws {
         guard case .specialBuild(let player) = phase else { throw GameError.wrongPhase }
-        let next = (player + 1) % players.count
+        var next = (player + 1) % players.count
+        while players[next].isNeutral { next = (next + 1) % players.count }
         if next == currentPlayer {
             advanceTurn()
         } else {
@@ -673,10 +1033,16 @@ public struct GameState: Codable, Sendable {
     }
 
     private mutating func advanceTurn() {
-        currentPlayer = (currentPlayer + 1) % players.count
+        var next = (currentPlayer + 1) % players.count
+        // Neutral players own pieces but never take a turn.
+        while players[next].isNeutral { next = (next + 1) % players.count }
+        currentPlayer = next
         turn += 1
         dice = nil
         playedCardThisTurn = false
+        rollsThisTurn = 0
+        firstRollTotal = nil
+        exchangedKnightThisTurn = false
         phase = .preRoll
     }
 
@@ -811,6 +1177,25 @@ extension GameState {
 
     mutating func setKnightsForTesting(_ count: Int, for player: Int) {
         players[player].knightsPlayed = count
+    }
+
+    mutating func clearHandsForTesting() {
+        for index in players.indices {
+            for resource in Resource.allCases {
+                bank[resource, default: 0] += players[index].count(of: resource)
+                players[index].resources[resource] = 0
+            }
+        }
+    }
+
+    mutating func setTradeTokensForTesting(_ count: Int, for player: Int) {
+        tradeTokenSupply += players[player].tradeTokens - count
+        players[player].tradeTokens = count
+    }
+
+    mutating func setLargestArmyForTesting(_ player: Int) {
+        for index in players.indices { players[index].hasLargestArmy = false }
+        players[player].hasLargestArmy = true
     }
 
     mutating func giveCardForTesting(_ card: DevelopmentCard, to player: Int) {

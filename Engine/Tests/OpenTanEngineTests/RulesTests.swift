@@ -3,8 +3,17 @@ import XCTest
 
 /// Plays the opening placement by always taking the first legal spot, so the
 /// tests below start from a real, reachable position.
-func startedGame(players: [String] = ["A", "B", "C"], seed: UInt64 = 42, options: GameOptions? = nil) throws -> GameState {
-    var game = GameState(playerNames: players, options: options, seed: seed)
+func startedGame(
+    players: [String] = ["A", "B", "C"],
+    seed: UInt64 = 42,
+    options: GameOptions? = nil,
+    variant: Bool = false
+) throws -> GameState {
+    // The base-rules suites opt out of the two-player variant, which would
+    // otherwise switch itself on at a table of two.
+    var resolved = options ?? GameOptions.recommended(forPlayerCount: players.count)
+    if options == nil { resolved.twoPlayerVariant = variant }
+    var game = GameState(playerNames: players, options: resolved, seed: seed)
     while !game.setupIsFinished {
         switch game.phase {
         case .setupSettlement:
@@ -19,6 +28,30 @@ func startedGame(players: [String] = ["A", "B", "C"], seed: UInt64 = 42, options
         }
     }
     return game
+}
+
+/// Rolls the dice as many times as the game asks for and clears the robber
+/// steps, stopping if a discard is owed. Returns false when the turn cannot be
+/// carried through to the building phase.
+@discardableResult
+func rollThroughToMain(_ game: inout GameState, limit: Int = 12) throws -> Bool {
+    for _ in 0..<limit {
+        switch game.phase {
+        case .main:
+            return true
+        case .preRoll:
+            try game.apply(.rollDice)
+        case .movingRobber:
+            try game.apply(.moveRobber(Placement.robberSpots(board: game.board).sorted().first!))
+        case .stealing(let candidates):
+            try game.apply(.steal(from: candidates[0]))
+        case .discarding:
+            return false
+        default:
+            return false
+        }
+    }
+    return false
 }
 
 final class SetupTests: XCTestCase {
@@ -66,6 +99,12 @@ final class SetupTests: XCTestCase {
         XCTAssertEqual(game.options.layout, .standard)
     }
 
+    func testTwoPlayersGetTheVariantByDefault() {
+        XCTAssertTrue(GameOptions.recommended(forPlayerCount: 2).twoPlayerVariant)
+        XCTAssertFalse(GameOptions.recommended(forPlayerCount: 3).twoPlayerVariant)
+        XCTAssertFalse(GameOptions.recommended(forPlayerCount: 5).twoPlayerVariant)
+    }
+
     func testFivePlayersUseTheLargeBoard() throws {
         let game = try startedGame(players: ["A", "B", "C", "D", "E"], seed: 9)
         XCTAssertEqual(game.options.layout, .large)
@@ -77,16 +116,7 @@ final class SetupTests: XCTestCase {
 final class BuildingTests: XCTestCase {
     func testRoadNeedsResourcesAndAConnection() throws {
         var game = try startedGame(players: ["A", "B"])
-        try game.apply(.rollDice)
-        if case .discarding = game.phase { return }
-        while game.phase != .main {
-            if case .movingRobber = game.phase {
-                try game.apply(.moveRobber(Placement.robberSpots(board: game.board).sorted().first!))
-            }
-            if case .stealing(let candidates) = game.phase {
-                try game.apply(.steal(from: candidates[0]))
-            }
-        }
+        guard try rollThroughToMain(&game) else { return }
 
         let spot = Placement.roadSpots(for: 0, board: game.board).sorted().first!
         XCTAssertThrowsError(try game.apply(.buildRoad(spot))) { error in

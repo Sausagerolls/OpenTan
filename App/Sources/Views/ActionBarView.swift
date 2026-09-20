@@ -6,10 +6,14 @@ import OpenTanEngine
 struct ActionBarView: View {
     let game: GameState
     @Binding var selection: BoardSelection
+    @Binding var neutralTarget: Int?
+    @Binding var neutralPiece: NeutralPiece
     var perform: (GameAction) -> Void
     var openTrade: () -> Void
     var openCards: () -> Void
     var openDiscard: () -> Void
+    var openTokens: () -> Void
+    var neutralSpotCount: (Int, NeutralPiece) -> Int
 
     private var me: Player { game.players[game.actingPlayer] }
 
@@ -35,7 +39,17 @@ struct ActionBarView: View {
         case .setupRoad:
             return "\(me.name): place a road on one of the highlighted sides."
         case .preRoll:
+            if game.rollsRemaining > 1 {
+                return "\(me.name): roll the dice, or play a development card first. Two rolls this turn."
+            }
+            if game.options.twoPlayerVariant {
+                return "\(me.name): roll again. The second roll must show a different total."
+            }
             return "\(me.name): roll the dice, or play a development card first."
+        case .neutralPlacement(let mustBeRoad):
+            return mustBeRoad
+                ? "\(me.name): the neutral players have nowhere to settle, so give one of them a free road."
+                : "\(me.name): give a neutral player a free road or settlement."
         case .discarding:
             let names = game.playersOwingDiscards.map { game.players[$0].name }
             return "Seven rolled. Waiting on: \(names.joined(separator: ", "))."
@@ -65,12 +79,15 @@ struct ActionBarView: View {
         case .setupSettlement, .setupRoad, .movingRobber, .placingFreeRoads:
             EmptyView()
 
+        case .neutralPlacement(let mustBeRoad):
+            neutralControls(mustBeRoad: mustBeRoad)
+
         case .preRoll:
             HStack(spacing: 10) {
                 Button {
                     perform(.rollDice)
                 } label: {
-                    Label("Roll dice", systemImage: "die.face.5")
+                    Label(game.rollsRemaining > 1 ? "Roll dice (1 of 2)" : "Roll dice", systemImage: "die.face.5")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -158,6 +175,14 @@ struct ActionBarView: View {
                     .buttonStyle(.bordered)
                 }
             }
+            if game.options.twoPlayerVariant, case .main = game.phase {
+                Button(action: openTokens) {
+                    Label("Trade tokens (\(me.tradeTokens))", systemImage: "circle.hexagongrid")
+                        .font(.caption.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+            }
             if case .specialBuild = game.phase {
                 Button("Done") { perform(.endSpecialBuild) }
                     .buttonStyle(.borderedProminent)
@@ -169,6 +194,40 @@ struct ActionBarView: View {
                     Text("End turn").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
+            }
+        }
+    }
+
+    /// Picks which neutral player gets the free piece, and whether it is a
+    /// road or a settlement. The board takes the tap that places it.
+    private func neutralControls(mustBeRoad: Bool) -> some View {
+        VStack(spacing: 8) {
+            Picker("Piece", selection: $neutralPiece) {
+                ForEach(NeutralPiece.allCases) { piece in
+                    Text(piece.title).tag(piece)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(mustBeRoad)
+
+            HStack(spacing: 8) {
+                ForEach(game.neutralPlayers) { neutral in
+                    let count = neutralSpotCount(neutral.id, neutralPiece)
+                    Button {
+                        neutralTarget = neutral.id
+                    } label: {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(neutral.color.swiftUIColor)
+                                .frame(width: 12, height: 12)
+                            Text(neutral.name).font(.caption.weight(.semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(neutralTarget == neutral.id ? .accentColor : nil)
+                    .disabled(count == 0)
+                }
             }
         }
     }

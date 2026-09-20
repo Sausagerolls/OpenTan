@@ -80,4 +80,58 @@ final class OpenTanUITests: XCTestCase {
             .firstMatch
         XCTAssertTrue(roadPrompt.waitForExistence(timeout: 5), "placing a settlement asks for the matching road")
     }
+
+    // MARK: - New game screen
+
+    func testAddingAndRemovingPlayers() {
+        launch(with: "--demo-none")
+        app.buttons["New game"].tap()
+
+        let add = app.buttons["Add player"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        XCTAssertEqual(nameFieldCount, 3, "the sheet opens with three players")
+
+        add.tap()
+        XCTAssertEqual(nameFieldCount, 4, "Add player should add a row")
+        add.tap()
+        XCTAssertEqual(nameFieldCount, 5)
+
+        let remove = app.buttons["Remove"]
+        remove.tap()
+        XCTAssertEqual(nameFieldCount, 4, "Remove should take a row away")
+        remove.tap()
+        remove.tap()
+        XCTAssertEqual(nameFieldCount, 2)
+        XCTAssertFalse(remove.isEnabled, "two players is the minimum")
+    }
+
+    func testTheTwoPlayerVariantIsOfferedAtATableOfTwo() {
+        launch(with: "--demo-none")
+        app.buttons["New game"].tap()
+
+        let remove = app.buttons["Remove"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 5))
+        remove.tap()
+
+        let toggle = app.switches["Two-player variant"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 2), "two players should be offered the variant")
+        XCTAssertEqual(toggle.value as? String, "1", "the variant is on by default")
+    }
+
+    private var nameFieldCount: Int {
+        app.textFields.matching(NSPredicate(format: "placeholderValue == 'Name'")).count
+    }
+
+    // MARK: - The two-player variant
+
+    func testBuildingOwesTheNeutralPlayersAPiece() {
+        launch(with: "--demo-two-player")
+
+        let roll = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Roll dice'")).firstMatch
+        XCTAssertTrue(roll.waitForExistence(timeout: 10))
+        XCTAssertTrue(
+            app.staticTexts.containing(NSPredicate(format: "label CONTAINS 'Two rolls this turn'")).firstMatch.exists,
+            "the variant announces both rolls"
+        )
+    }
 }

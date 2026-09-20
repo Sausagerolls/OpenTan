@@ -9,7 +9,7 @@ struct GameView: View {
     @State private var winnerDismissed = false
 
     enum ActiveSheet: String, Identifiable {
-        case trade, cards, discard, log, rules
+        case trade, cards, discard, tokens, log, rules
         var id: String { rawValue }
     }
 
@@ -47,16 +47,24 @@ struct GameView: View {
                     .background(Color.red.opacity(0.85))
             }
 
-            HandView(player: game.players[game.actingPlayer], revealed: $store.handRevealed)
+            HandView(
+                player: game.players[game.actingPlayer],
+                tradeTokens: game.options.twoPlayerVariant ? game.players[game.actingPlayer].tradeTokens : nil,
+                revealed: $store.handRevealed
+            )
                 .padding(.vertical, 8)
 
             ActionBarView(
                 game: game,
                 selection: $store.selection,
+                neutralTarget: $store.neutralTarget,
+                neutralPiece: $store.neutralPiece,
                 perform: store.perform,
                 openTrade: { sheet = .trade },
                 openCards: { sheet = .cards },
-                openDiscard: { sheet = .discard }
+                openDiscard: { sheet = .discard },
+                openTokens: { sheet = .tokens },
+                neutralSpotCount: store.spots(for:piece:)
             )
         }
         .toolbar {
@@ -91,6 +99,8 @@ struct GameView: View {
             }
         }
         .animation(.snappy, value: store.needsHandover)
+        .onAppear { store.syncNeutralChoice() }
+        .onChange(of: store.neutralPiece) { _, _ in store.syncNeutralChoice() }
         .onChange(of: game.phase) { _, newPhase in
             if case .discarding = newPhase, !store.needsHandover {
                 sheet = .discard
@@ -109,6 +119,13 @@ struct GameView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .background(Capsule().fill(.thinMaterial))
+            }
+            if game.options.twoPlayerVariant {
+                Text("Tokens left: \(game.tradeTokenSupply)")
+                    .font(.caption2)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(.thinMaterial))
             }
             Text("Deck: \(game.developmentDeck.count)")
                 .font(.caption2)
@@ -166,6 +183,23 @@ struct GameView: View {
             } else {
                 Text("Nothing to discard.")
             }
+        case .tokens:
+            TradeTokenSheet(
+                game: game,
+                onForcedTrade: { give in
+                    store.perform(.forcedTrade(give: give))
+                    sheet = nil
+                },
+                onRobberToDesert: {
+                    store.perform(.moveRobberToDesert)
+                    sheet = nil
+                },
+                onKnightExchange: {
+                    store.perform(.exchangeKnightForTokens)
+                    sheet = nil
+                },
+                onCancel: { sheet = nil }
+            )
         case .log:
             LogView(game: game) { sheet = nil }
         case .rules:

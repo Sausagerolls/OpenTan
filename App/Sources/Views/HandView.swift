@@ -5,6 +5,7 @@ import OpenTanEngine
 /// and is only shown while the owner is holding the device.
 struct HandView: View {
     let player: Player
+    let tradeTokens: Int?
     @Binding var revealed: Bool
 
     var body: some View {
@@ -17,6 +18,11 @@ struct HandView: View {
                     if !player.developmentCards.isEmpty {
                         Divider().frame(height: 22)
                         Label("\(player.developmentCards.count)", systemImage: "square.stack")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    if let tradeTokens {
+                        Divider().frame(height: 22)
+                        Label("\(tradeTokens)", systemImage: "circle.hexagongrid")
                             .font(.subheadline.weight(.semibold))
                     }
                 }

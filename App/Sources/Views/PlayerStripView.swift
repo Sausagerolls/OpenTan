@@ -33,14 +33,25 @@ struct PlayerStripView: View {
                     .lineLimit(1)
             }
             HStack(spacing: 8) {
-                Label("\(game.victoryPoints(for: player.id, includingHidden: showHidden))", systemImage: "rosette")
-                Label("\(player.handCount)", systemImage: "rectangle.on.rectangle")
-                Label("\(player.developmentCards.count)", systemImage: "square.stack")
+                if player.isNeutral {
+                    Label("\(Rules.roadSupply - player.roadsLeft)", systemImage: "road.lanes")
+                    Label("\(Rules.settlementSupply - player.settlementsLeft)", systemImage: "house")
+                } else {
+                    Label("\(game.victoryPoints(for: player.id, includingHidden: showHidden))", systemImage: "rosette")
+                    Label("\(player.handCount)", systemImage: "rectangle.on.rectangle")
+                    Label("\(player.developmentCards.count)", systemImage: "square.stack")
+                    if game.options.twoPlayerVariant {
+                        Label("\(player.tradeTokens)", systemImage: "circle.hexagongrid")
+                    }
+                }
             }
             .font(.caption2)
             .labelStyle(.titleAndIcon)
 
             HStack(spacing: 6) {
+                if player.isNeutral {
+                    Text("Neutral").badgeStyle()
+                }
                 if player.hasLongestRoad {
                     Text("Longest road").badgeStyle()
                 }

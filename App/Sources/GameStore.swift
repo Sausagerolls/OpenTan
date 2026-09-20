@@ -2,6 +2,13 @@ import Foundation
 import Observation
 import OpenTanEngine
 
+/// The free piece the two-player variant owes a neutral player.
+enum NeutralPiece: String, CaseIterable, Identifiable {
+    case road, settlement
+    var id: String { rawValue }
+    var title: String { self == .road ? "Road" : "Settlement" }
+}
+
 /// What a tap on the board means right now.
 enum BoardSelection: Equatable {
     case none
@@ -22,6 +29,10 @@ final class GameStore {
     /// screen until it matches the player who has to act.
     private(set) var deviceHolder: Int?
     var handRevealed = false
+    /// Two-player variant: which neutral player the free piece goes to, and
+    /// whether it is a road or a settlement.
+    var neutralTarget: Int?
+    var neutralPiece: NeutralPiece = .road
     /// False while the menu is on screen, even when a saved game exists.
     private(set) var isPlaying = false
 
@@ -31,7 +42,9 @@ final class GameStore {
         self.saveURL = saveURL ?? FileManager.default
             .urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("opentan-save.json")
-        if DemoGame.isRequested {
+        if DemoGame.startsOnMenu {
+            game = nil
+        } else if DemoGame.isRequested {
             game = DemoGame.make()
             isPlaying = true
         } else {
@@ -48,6 +61,7 @@ final class GameStore {
         handRevealed = false
         deviceHolder = game.map { Self.playerToAct(in: $0) }
         isPlaying = true
+        syncNeutralChoice()
         save()
     }
 
@@ -120,6 +134,7 @@ final class GameStore {
             self.game = game
             message = nil
             selection = .none
+            syncNeutralChoice()
             if needsHandover { handRevealed = false }
             save()
         } catch {
@@ -133,6 +148,9 @@ final class GameStore {
         switch game.phase {
         case .setupSettlement:
             perform(.placeSetupSettlement(vertex))
+        case .neutralPlacement:
+            guard let neutral = neutralTarget else { return }
+            perform(.placeNeutralSettlement(neutral: neutral, vertex: vertex))
         default:
             switch selection {
             case .settlement: perform(.buildSettlement(vertex))
@@ -149,6 +167,9 @@ final class GameStore {
             perform(.placeSetupRoad(edge))
         case .placingFreeRoads:
             perform(.buildRoad(edge))
+        case .neutralPlacement:
+            guard let neutral = neutralTarget else { return }
+            perform(.placeNeutralRoad(neutral: neutral, edge: edge))
         default:
             if selection == .road { perform(.buildRoad(edge)) }
         }
@@ -168,6 +189,10 @@ final class GameStore {
         if case .setupSettlement = game.phase {
             return Placement.setupSettlementSpots(board: game.board)
         }
+        if case .neutralPlacement = game.phase {
+            guard neutralPiece == .settlement, let neutral = neutralTarget else { return [] }
+            return game.neutralSettlementSpots(for: neutral)
+        }
         switch selection {
         case .settlement: return Placement.settlementSpots(for: game.actingPlayer, board: game.board)
         case .city: return Placement.citySpots(for: game.actingPlayer, board: game.board)
@@ -182,6 +207,9 @@ final class GameStore {
             return Placement.setupRoadSpots(from: vertex, board: game.board)
         case .placingFreeRoads:
             return Placement.roadSpots(for: game.actingPlayer, board: game.board)
+        case .neutralPlacement:
+            guard neutralPiece == .road, let neutral = neutralTarget else { return [] }
+            return game.neutralRoadSpots(for: neutral)
         default:
             return selection == .road ? Placement.roadSpots(for: game.actingPlayer, board: game.board) : []
         }
@@ -191,6 +219,39 @@ final class GameStore {
         guard let game else { return [] }
         if case .movingRobber = game.phase { return Placement.robberSpots(board: game.board) }
         return []
+    }
+
+    /// Points the free piece at a neutral player who actually has somewhere to
+    /// put it, and falls back to a road when no settlement is legal.
+    func syncNeutralChoice() {
+        guard let game, case .neutralPlacement(let mustBeRoad) = game.phase else {
+            neutralTarget = nil
+            return
+        }
+        if mustBeRoad { neutralPiece = .road }
+
+        let neutrals = game.neutralPlayers.map(\.id)
+        func hasSpots(_ neutral: Int) -> Bool {
+            neutralPiece == .road
+                ? !game.neutralRoadSpots(for: neutral).isEmpty
+                : !game.neutralSettlementSpots(for: neutral).isEmpty
+        }
+
+        if let current = neutralTarget, neutrals.contains(current), hasSpots(current) { return }
+        if let usable = neutrals.first(where: hasSpots) {
+            neutralTarget = usable
+            return
+        }
+        // Nowhere to put the chosen piece: switch to the other kind.
+        neutralPiece = neutralPiece == .road ? .settlement : .road
+        neutralTarget = neutrals.first(where: hasSpots) ?? neutrals.first
+    }
+
+    func spots(for neutral: Int, piece: NeutralPiece) -> Int {
+        guard let game else { return 0 }
+        return piece == .road
+            ? game.neutralRoadSpots(for: neutral).count
+            : game.neutralSettlementSpots(for: neutral).count
     }
 
     // MARK: - Persistence

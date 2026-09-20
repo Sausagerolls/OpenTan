@@ -41,7 +41,7 @@ struct TradeSheet: View {
             }
         }
         .onAppear {
-            partner = game.players.first { $0.id != me.id }?.id ?? 0
+            partner = game.players.first { $0.id != me.id && !$0.isNeutral }?.id ?? 0
         }
     }
 
@@ -93,7 +93,7 @@ struct TradeSheet: View {
         Group {
             Section("Partner") {
                 Picker("Partner", selection: $partner) {
-                    ForEach(game.players.filter { $0.id != me.id }) { player in
+                    ForEach(game.players.filter { $0.id != me.id && !$0.isNeutral }) { player in
                         Text(player.name).tag(player.id)
                     }
                 }

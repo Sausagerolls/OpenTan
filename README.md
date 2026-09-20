@@ -23,11 +23,19 @@ server and no network code of any kind.
    Tap the hand bar to hide your own cards again before you pass it on.
 
 The full rules summary is in the app under the book icon, and in
-[docs/RULES.md](docs/RULES.md).
+[docs/RULES.md](docs/RULES.md). A game of two follows the published two-player
+variant; see [Playing with two](docs/RULES.md#playing-with-two).
+
+<p align="center">
+  <img src="docs/screenshots/iphone-two-player.png" width="250" alt="A two-player game with the neutral players on the board">
+</p>
 
 ## What is implemented
 
 - The 19-tile board for two to four players and the 30-tile board for five or six.
+- The published two-player variant, on by default at a table of two: two neutral
+  players holding pieces, two dice rolls a turn, a free neutral piece for every
+  road or settlement you build, and trade tokens.
 - Random board generation, with an option to keep the 6 and 8 tiles apart.
 - Nine ports on the small board and eleven on the large one, spread around the
   coast: 2:1 for each resource and the rest 3:1.
