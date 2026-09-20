@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  engine:
+    name: Rules engine
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run engine tests
+        working-directory: Engine
+        run: swift test
+
+  app:
+    name: iOS app
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the project
+        run: xcodegen generate
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project OpenTan.xcodeproj \
+            -scheme OpenTan \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO

@@ -1,0 +1,21 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+
+# The Xcode project is generated from project.yml by XcodeGen.
+OpenTan.xcodeproj/
+
+# Swift Package Manager
+Engine/.build/
+Engine/.swiftpm/
+.build/
+Package.resolved
+
+# macOS
+.DS_Store
