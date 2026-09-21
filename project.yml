@@ -20,11 +20,6 @@ targets:
     dependencies:
       - package: OpenTanEngine
         product: OpenTanEngine
-    info:
-      path: App/Resources/Info.plist
-      properties:
-        CFBundleDisplayName: OpenTan
-        UILaunchScreen: {}
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.opentan.OpenTan
@@ -37,6 +32,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
         GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: App/Info.plist
         SUPPORTS_MACCATALYST: NO
 
   OpenTanUITests:
