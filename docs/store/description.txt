@@ -1,0 +1,32 @@
+OpenTan is a board game for two to six people sharing one iPhone or iPad. You settle an island, collect brick, lumber, wool, grain and ore from the tiles you build beside, trade for whatever you are short of, and race the rest of the table to ten victory points.
+
+Everything happens on the device in front of you. No sign in, no server, no adverts, no in app purchases. The app never touches the network.
+
+HOW A GAME GOES
+
+Everyone places two settlements and two roads to open. After that a turn is short: roll the dice, collect from every tile showing that number, then build, trade and play a development card in any order.
+
+Roads cost brick and lumber. Settlements add wool and grain. Cities take grain and ore and pay double from then on. The development deck holds knights, free roads, a windfall from the bank, a monopoly on one resource, and hidden victory points. Roll a seven and nobody collects: anyone holding too many cards throws half of them away, and the robber moves to a tile of your choosing and shuts it down.
+
+PASS AND PLAY THAT KEEPS A SECRET
+
+The screen covers itself whenever the device should change hands, including for discards after a seven and for a trade offered to somebody else. Your own cards sit behind a tap, so the device crosses the table without showing your hand.
+
+PLAYING WITH TWO
+
+A game of two uses the published two player variant instead of a thinned out three player game. Two neutral players hold pieces on the board, you roll twice a turn, every road or settlement you build hands a neutral player a free piece, and trade tokens buy you a forced trade or send the robber back to the desert.
+
+WHAT YOU GET
+
+- The 19 tile board for two to four players and the 30 tile board for five or six
+- Ports at 3:1 and 2:1, longest road, largest army and the full development deck
+- Bank trades, port trades and face to face trades with anyone at the table
+- House rules you can change: points needed to win, the hand size that forces a discard, whether the two best numbers may touch, and the special build phase
+- A rules reference and a running game log, so arguments at the table end quickly
+- Games save themselves, so you can put the device down in the middle of a turn
+
+OPEN SOURCE
+
+OpenTan is free, carries no adverts and no tracking, and every line of it is published under the MIT licence at github.com/Sausagerolls/OpenTan. Bug reports and pull requests are welcome.
+
+OpenTan is an independent implementation of the public rules of a classic trading and building board game. It is not affiliated with or endorsed by any board game publisher, and it contains none of their artwork, text or trademarks.

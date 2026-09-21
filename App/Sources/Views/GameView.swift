@@ -73,7 +73,9 @@ struct GameView: View {
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button { sheet = .rules } label: { Image(systemName: "book") }
+                    .accessibilityLabel("Rules")
                 Button { sheet = .log } label: { Image(systemName: "list.bullet.rectangle") }
+                    .accessibilityLabel("Game log")
             }
         }
         .navigationTitle("OpenTan")
